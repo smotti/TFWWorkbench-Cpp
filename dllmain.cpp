@@ -192,6 +192,19 @@ private:
 				);
 			}
 		}
+		else if (auto* prop = CastField<FBoolProperty>(property))
+		{
+			if (table.value.is_bool())
+			{
+				bool propertyValue = table.value.get_bool();
+				*static_cast<bool*>(propertyPtr) = propertyValue;
+
+				Output::send<LogLevel::Verbose>(
+					STR("[TFWWorkbench] Set bool property '{}' to value: {}\n"),
+					propertyName, propertyValue
+				);
+			}
+		}
 		else if (auto* prop = CastField<FSoftObjectProperty>(property))
 		{
 			if (table.value.is_string())
