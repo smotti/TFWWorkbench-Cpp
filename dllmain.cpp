@@ -232,6 +232,27 @@ private:
 				);
 			}
 		}
+		else if (auto* prop = CastField<FObjectProperty>(property))
+		{
+			// The value passed from Lua is the full asset path as a string
+			if (table.value.is_string())
+			{
+				auto propertyValue = to_wstring(table.value.get_string());
+				auto obj = UObjectGlobals::StaticFindObject(
+					nullptr,
+					nullptr,
+					propertyValue
+				);
+
+				if (obj)
+				{
+					Output::send<LogLevel::Verbose>(
+						STR("[TFWWorkbench] Found object via path: {}\n"), propertyValue
+					);
+					*static_cast<UObject*>(propertyPtr) = *obj;
+				}
+			}
+		}
 		else if (auto* prop = CastField<FArrayProperty>(property))
 		{
 			if (table.value.is_table())
