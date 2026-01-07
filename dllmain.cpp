@@ -241,13 +241,69 @@ private:
 					propertyName
 				);
 
-				lua.for_each_in_table([&](LuaMadeSimple::LuaTableReference innerTable) -> bool {
-					if (!innerTable.key.get_integer()) return false;
-					
-					auto innerPropertyName = to_wstring(innerTable.key.get_string());
-					Output::send<LogLevel::Verbose>(
-						STR("[TFWWorkbench] Inner property '{}'\n"), innerPropertyName
-					);
+				FProperty* innerProp = prop->GetInner();
+				int32 elementSize = innerProp->GetSize();
+
+				// Count elements first
+				int32 count = 0;
+				lua.for_each_in_table([&](LuaMadeSimple::LuaTableReference element) -> bool {
+					count++;
+					return false;
+				});
+
+				Output::send<LogLevel::Verbose>(
+					STR("[TFWWorkbench] Creating array with {} elements\n"), count
+				);
+
+				auto* arr = static_cast<TArray<uint8>*>(propertyPtr);
+				arr->Empty();
+
+				if (count == 0) return;
+
+				// SetName allocates and initializes
+				arr->SetNum(count);
+
+				uint8* data = arr->GetData();
+
+				if (auto* innerStructProp = CastField<FStructProperty>(innerProp))
+				{
+					UScriptStruct* elementStruct = innerStructProp->GetStruct();
+					for (int32 i = 0; i < count; i++)
+					{
+						elementStruct->InitializeStruct(data + (i * elementSize));
+					}
+				}
+
+				// Fill from lua table
+				int32 index = 0;
+				lua.for_each_in_table([&](LuaMadeSimple::LuaTableReference element) -> bool {
+					void* elemPtr = data + (index * elementSize);
+
+					// Array element is a StructProperty
+					if (auto* innerStructProp = CastField<FStructProperty>(innerProp))
+					{
+						if (element.value.is_table())
+						{
+							UScriptStruct* elementStruct = innerStructProp->GetStruct();
+							
+							lua.for_each_in_table([&](LuaMadeSimple::LuaTableReference field) -> bool {
+								if (!field.key.is_string()) return false;
+
+								auto fieldName = to_wstring(field.key.get_string());
+								FProperty* fieldProp = elementStruct->GetPropertyByNameInChain(fieldName.c_str());
+
+								if (fieldProp)
+								{
+									void* fieldPtr = fieldProp->ContainerPtrToValuePtr<void>(elemPtr);
+									SetPropertyValueFromLua(lua, field, fieldProp, fieldPtr, fieldName);
+								}
+
+								return false;
+							});
+						}
+					}
+
+					index++;
 					return false;
 				});
 			}
