@@ -65,36 +65,7 @@ public:
 
 	auto on_unreal_init() -> void override
 	{
-		Output::send<LogLevel::Verbose>(STR("[TFWWorkbench] Caching data tables and their row structs\n"));
-		for (const auto& [tableName, tablePath] : DATA_TABLE_NAMES)
-		{
-			m_cached_data_table[tableName] = static_cast<UDataTable*>(
-				UObjectGlobals::StaticFindObject<UObject*>(
-					nullptr,
-					nullptr,
-					tablePath
-				)
-				);
-			Output::send<LogLevel::Verbose>(STR("[TFWWorkbench] Cached DataTable: {}\n"), tablePath);
-		}
 
-		if (!m_cached_data_table.empty())
-		{
-			for (const auto& [tableName, table] : m_cached_data_table)
-			{
-				m_cached_row_struct[tableName] = table->GetRowStruct();
-				Output::send<LogLevel::Default>(
-					STR("[TFWWorkbench] Cached RowStruct for DataTable: {}\n"),
-					to_wstring(tableName)
-				);
-			}
-		}
-		else
-		{
-			Output::send<LogLevel::Warning>(
-				STR("[TFWWorkbench] DataTables not found on init, will retry on function call\n")
-			);
-		}
 	}
 
 	auto on_lua_start(LuaMadeSimple::Lua& lua,
