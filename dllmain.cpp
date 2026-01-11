@@ -89,15 +89,12 @@ public:
 		LuaMadeSimple::Lua* hook_lua) -> void override
 	{
 			main_lua.register_function("AddInventoryItemRow", &TFWWorkbench::Lua_AddInventoryItemRow);
-			main_lua.register_function("SetFTextPropertyValue", &TFWWorkbench::Lua_SetFTextPropertyValue);
 
 			async_lua.register_function("AddInventoryItemRow", &TFWWorkbench::Lua_AddInventoryItemRow);
-			async_lua.register_function("SetFTextPropertyValue", &TFWWorkbench::Lua_SetFTextPropertyValue);
 
 			if (hook_lua)
 			{
 				hook_lua->register_function("AddInventoryItemRow", &TFWWorkbench::Lua_AddInventoryItemRow);
-				hook_lua->register_function("SetFTextPropertyValue", &TFWWorkbench::Lua_SetFTextPropertyValue);
 			}
 
 			Output::send<LogLevel::Default>(STR("[TFWWorkbench] Registered Lua functions for mod\n"));
@@ -361,77 +358,6 @@ private:
 				});
 			}
 		}
-	}
-
-	/// <summary>
-	/// Lua function of three parameters:
-	/// - string rowName
-	/// - string propertyName
-	/// - string propertyValue
-	/// </summary>
-	/// <param name="lua"></param>
-	/// <returns></returns>
-	static auto Lua_SetFTextPropertyValue(const LuaMadeSimple::Lua& lua) -> int
-	{
-		if (!s_instance)
-		{
-			Output::send<LogLevel::Error>(STR("[TFWWorkbench] No instance available\n"));
-			lua.set_bool(false);
-			return 1;
-		}
-
-		if (!lua.is_string(1) || !lua.is_string(2) || !lua.is_string(3))
-		{
-			Output::send<LogLevel::Error>(STR("[TFWWorkbench] Invalid parameters. Expected: (string, string, string)\n"));
-			lua.set_bool(false);
-			return 1;
-		}
-
-		auto rowName = to_wstring(lua.get_string());
-		auto propertyName = to_wstring(lua.get_string());
-		auto propertyValue = to_wstring(lua.get_string());
-
-		UDataTable* dataTable = s_instance->GetDataTable();
-		if (!dataTable)
-		{
-			Output::send<LogLevel::Error>(STR("[TFWWorkbench] DataTable not found: {}\n"), DATA_TABLE_NAME);
-			lua.set_bool(false);
-			return 1;
-		}
-
-		UScriptStruct* rowStruct = dataTable->GetRowStruct();
-		if (!rowStruct)
-		{
-			Output::send<LogLevel::Error>(STR("[TFWWorkbench] DataTable RowStruct not found\n"));
-			lua.set_bool(false);
-			return 1;
-		}
-
-		FName rowFName(rowName.c_str(), FNAME_Find);
-		uint8* row = dataTable->FindRowUnchecked(rowFName);
-		if (!row)
-		{
-			Output::send<LogLevel::Error>(STR("[TFWWorkbench] Row '{}' not found\n"), rowName);
-			lua.set_bool(false);
-			return 1;
-		}
-
-		FProperty* property = rowStruct->GetPropertyByNameInChain(propertyName.c_str());
-		if (!property)
-		{
-			Output::send<LogLevel::Error>(STR("[TFWWorkbench] Failed to find property '{}'\n"), propertyName);
-			lua.set_bool(false);
-			return 1;
-		}
-		FText* propertyPtr = property->ContainerPtrToValuePtr<FText>(row);
-		propertyPtr->~FText();
-		new (propertyPtr) FText(propertyValue.c_str());
-
-		Output::send<LogLevel::Default>(STR("[TFWWorkbench] Setting property '{}' to value: {}\n"),
-			propertyName, propertyValue);
-
-		lua.set_bool(true);
-		return 1;
 	}
 
 	static auto Lua_AddInventoryItemRow(const LuaMadeSimple::Lua& lua) -> int
