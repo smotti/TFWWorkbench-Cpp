@@ -21,7 +21,14 @@
 
 
 constexpr size_t INVENTORY_ITEM_DETAILS_SIZE = 0x240;
-const auto DATA_TABLE_NAME = STR("/Game/Blueprints/Data/ItemDetailsData.ItemDetailsData");
+const std::map<std::string, StringType> DATA_TABLE_NAMES = {
+	{"InventoryItemDetails", STR("/Game/Blueprints/Data/ItemDetailsData.ItemDetailsData")},
+	{"ManufacturingRecipes", STR("/Game/FW/UI/Manufactoring/Data/DT_ManufactoringRecipies.DT_ManufactoringRecipies")}
+};
+const std::map<std::string, StringType> SOURCE_ROWS = {
+	{"InventoryItemDetails", STR("FirstAid")},
+	{"ManufacturingRecipes", STR("DA_CigarettesForCryo545")}
+};
 
 
 using namespace RC;
@@ -33,18 +40,16 @@ private:
 	// Static instance pointer for use in static lua callbacks
 	static TFWWorkbench* s_instance;
 
-	UDataTable* m_cached_data_table = nullptr;
-	UScriptStruct* m_cached_row_struct = nullptr;
+	std::map<std::string, UDataTable*> m_cached_data_table = {};
+	std::map<std::string, UScriptStruct*> m_cached_row_struct = {};
 
 public:
 	TFWWorkbench() : CppUserModBase()
 	{
 		ModName = STR("TFWWorkbench");
 		ModVersion = STR("0.1");
-		ModDescription = STR("Manage items, vendors, and more for TFW");
+		ModDescription = STR("Manage items, vendors, crafting recipes, and more for TFW");
 		ModAuthors = STR("terraru");
-
-		Output::send<LogLevel::Verbose>(STR("TFWWorkbench says hello\n"));
 
 		s_instance = this;
 	}
@@ -60,25 +65,34 @@ public:
 
 	auto on_unreal_init() -> void override
 	{
-		m_cached_data_table = static_cast<UDataTable*>(
-			UObjectGlobals::StaticFindObject<UObject*>(
-				nullptr,
-				nullptr,
-				DATA_TABLE_NAME
-			)
-		);
-
-		if (m_cached_data_table)
+		Output::send<LogLevel::Verbose>(STR("[TFWWorkbench] Caching data tables and their row structs\n"));
+		for (const auto& [tableName, tablePath] : DATA_TABLE_NAMES)
 		{
-			m_cached_row_struct = m_cached_data_table->GetRowStruct();
-			Output::send<LogLevel::Default>(
-				STR("[TFWWorkbench] Cached DataTable and RowStruct successfully\n")
-			);
+			m_cached_data_table[tableName] = static_cast<UDataTable*>(
+				UObjectGlobals::StaticFindObject<UObject*>(
+					nullptr,
+					nullptr,
+					tablePath
+				)
+				);
+			Output::send<LogLevel::Verbose>(STR("[TFWWorkbench] Cached DataTable: {}\n"), tablePath);
+		}
+
+		if (!m_cached_data_table.empty())
+		{
+			for (const auto& [tableName, table] : m_cached_data_table)
+			{
+				m_cached_row_struct[tableName] = table->GetRowStruct();
+				Output::send<LogLevel::Default>(
+					STR("[TFWWorkbench] Cached RowStruct for DataTable: {}\n"),
+					to_wstring(tableName)
+				);
+			}
 		}
 		else
 		{
 			Output::send<LogLevel::Warning>(
-				STR("[TFWWorkbench] DataTable not found on init, will retry on function call\n")
+				STR("[TFWWorkbench] DataTables not found on init, will retry on function call\n")
 			);
 		}
 	}
@@ -88,32 +102,51 @@ public:
 		LuaMadeSimple::Lua& async_lua,
 		LuaMadeSimple::Lua* hook_lua) -> void override
 	{
-			main_lua.register_function("AddInventoryItemRow", &TFWWorkbench::Lua_AddInventoryItemRow);
+		main_lua.register_function("AddDataTableRow", &TFWWorkbench::Lua_AddDataTableRow);
 
-			async_lua.register_function("AddInventoryItemRow", &TFWWorkbench::Lua_AddInventoryItemRow);
+		async_lua.register_function("AddDataTableRow", &TFWWorkbench::Lua_AddDataTableRow);
 
-			if (hook_lua)
-			{
-				hook_lua->register_function("AddInventoryItemRow", &TFWWorkbench::Lua_AddInventoryItemRow);
-			}
+		if (hook_lua)
+		{
+			hook_lua->register_function("AddDataTableRow", &TFWWorkbench::Lua_AddDataTableRow);
+		}
 
-			Output::send<LogLevel::Default>(STR("[TFWWorkbench] Registered Lua functions for mod\n"));
+		Output::send<LogLevel::Default>(STR("[TFWWorkbench] Registered Lua functions for mod\n"));
 	}
 
 private:
-	auto GetDataTable() -> UDataTable*
+	auto GetDataTable(std::string tableName) -> UDataTable*
 	{
-		if (!m_cached_data_table)
+		if (!m_cached_data_table.contains(tableName))
 		{
-			m_cached_data_table = static_cast<UDataTable*>(
-				UObjectGlobals::StaticFindObject<UObject*>(
-					nullptr,
-					nullptr,
-					DATA_TABLE_NAME
-				)
-			);
+			try
+			{
+				m_cached_data_table[tableName] = static_cast<UDataTable*>(
+					UObjectGlobals::StaticFindObject<UObject*>(
+						nullptr,
+						nullptr,
+						DATA_TABLE_NAMES.at(tableName)
+					)
+				);
+			}
+			catch (const std::out_of_range& ex)
+			{
+				Output::send<LogLevel::Error>(
+					STR("[TFWWorkbench] Failed to cache DataTable: {}\n"),
+					to_wstring(ex.what())
+				);
+			}
 		}
-		return m_cached_data_table;
+		return m_cached_data_table[tableName];
+	}
+
+	auto GetDataTableRowStruct(std::string tableName) -> UScriptStruct*
+	{
+		if (!m_cached_row_struct.contains(tableName))
+		{
+			m_cached_row_struct[tableName] = this->GetDataTable(tableName)->GetRowStruct();
+		}
+		return m_cached_row_struct[tableName];
 	}
 
 	static auto SetPropertyValueFromLua(const LuaMadeSimple::Lua& lua,
@@ -274,6 +307,7 @@ private:
 
 				FProperty* innerProp = prop->GetInner();
 				int32 elementSize = innerProp->GetSize();
+				uint32 elementAligment = innerProp->GetMinAlignment();
 
 				// Count elements first
 				int32 count = 0;
@@ -283,18 +317,19 @@ private:
 				});
 
 				Output::send<LogLevel::Verbose>(
-					STR("[TFWWorkbench] Creating array with {} elements\n"), count
+					STR("[TFWWorkbench] Creating array with {} elements (elementSize={}, alignment={})\n"),
+					count, elementSize, elementAligment
 				);
 
-				auto* arr = static_cast<TArray<uint8>*>(propertyPtr);
-				arr->Empty();
+				auto* arr = static_cast<FScriptArray*>(propertyPtr);
+				arr->Empty(0, elementSize, elementAligment);
 
 				if (count == 0) return;
 
-				// SetName allocates and initializes
-				arr->SetNum(count);
+				// Allocate and zero-initialize
+				arr->AddZeroed(count, elementSize, elementAligment);
 
-				uint8* data = arr->GetData();
+				uint8* data = static_cast<uint8*>(arr->GetData());
 
 				if (auto* innerStructProp = CastField<FStructProperty>(innerProp))
 				{
@@ -344,6 +379,7 @@ private:
 			if (table.value.is_table())
 			{
 				auto innerStruct = prop->GetStruct();
+
 				lua.for_each_in_table([&](LuaMadeSimple::LuaTableReference innerTable) -> bool {
 					if (!innerTable.key.is_string()) return false;
 
@@ -357,10 +393,32 @@ private:
 					return false;
 				});
 			}
+			/* This doesn't work. Either causes a crash on game startup or UE4SS crashing on dumping the table.
+			* Probably fails in other instances too. When referencing the data.
+			*
+			else if (table.value.is_number())
+			{
+				auto innerStruct = prop->GetStruct();
+				auto structName = innerStruct->GetName();
+				// This is to handle the case of FTimespan not having a `Ticks` field.
+				// Instead it's just 64 bit integer.
+				// NOTE: There's probably a better way to check for the class /Script/CoreUObject.Timespan
+				if (structName == STR("Timespan"))
+				{
+					int64_t propertyValue = table.value.get_integer();
+					*static_cast<int64_t*>(propertyPtr) = propertyValue;
+
+					Output::send<LogLevel::Verbose>(
+						STR("[TFWWorkbench] Set Timespan property '{}' to value: {}\n"),
+						propertyName, propertyValue
+					);
+				}
+			}
+			*/
 		}
 	}
 
-	static auto Lua_AddInventoryItemRow(const LuaMadeSimple::Lua& lua) -> int
+	static auto Lua_AddDataTableRow(const LuaMadeSimple::Lua& lua) -> int
 	{
 		if (!s_instance)
 		{
@@ -371,31 +429,39 @@ private:
 
 		try
 		{
-
+			std::string_view tableName = lua.get_string();
 			std::string_view newRowName = lua.get_string();
-			if (newRowName == "" || !lua.is_table())
+			if (tableName == "" || newRowName == "" || !lua.is_table())
 			{
 				Output::send<LogLevel::Error>(
-					STR("[TFWWorkbench] Invalid parameters. Expected: (string, table)\n")
+					STR("[TFWWorkbench] Invalid parameters. Expected: (string, string, table)\n")
 				);
 				lua.set_bool(false);
 				return 1;
 			}
-			LuaMadeSimple::Lua::Table rowData = lua.get_table();
 
 			Output::send<LogLevel::Default>(STR("[TFWWorkbench] Adding row '{}'\n"),
 				to_wstring(newRowName)
 			);
 
-			UDataTable* dataTable = s_instance->GetDataTable();
+			UDataTable* dataTable = s_instance->GetDataTable(static_cast<std::string>(tableName));
 			if (!dataTable)
 			{
-				Output::send<LogLevel::Error>(STR("[TFWWorkbench] DataTable not found: {}\n"), DATA_TABLE_NAME);
+				Output::send<LogLevel::Error>(STR("[TFWWorkbench] DataTable not found: {}\n"), to_wstring(tableName));
 				lua.set_bool(false);
 				return 1;
 			}
 
-			UScriptStruct* rowStruct = dataTable->GetRowStruct();
+			UScriptStruct* rowStruct;
+			try
+			{
+				rowStruct = s_instance->GetDataTableRowStruct(static_cast<std::string>(tableName));
+			}
+			catch (...)
+			{
+				rowStruct = dataTable->GetRowStruct();
+			}
+
 			if (!rowStruct)
 			{
 				Output::send<LogLevel::Error>(STR("[TFWWorkbench] DataTable RowStruct not found\n"));
@@ -412,22 +478,41 @@ private:
 				return 1;
 			}
 
+			// NOTE: Still haven't figured out why dumping (reading) of tables fail
+			// if a "sourceRow" isn't used. It's successful in adding the new row w/o
+			// a source row. But fails when reading the new row from the table.
 			rowStruct->InitializeStruct(newRow);
-			FName sourceFName(STR("FirstAid"), FNAME_Find);
+			auto sourceRowName = SOURCE_ROWS.at(static_cast<std::string>(tableName));
+			FName sourceFName(sourceRowName, FNAME_Find);
 			uint8* sourceRow = dataTable->FindRowUnchecked(sourceFName);
 			if (!sourceRow)
 			{
-				Output::send<LogLevel::Error>(STR("[TFWWorkbench] Source row FirstAid not found\n"));
+				Output::send<LogLevel::Error>(STR("[TFWWorkbench] Source row {} not found\n"), sourceRowName);
 				lua.set_bool(false);
 				return 1;
 			}
+			
 			rowStruct->CopyScriptStruct(newRow, sourceRow);
+
+			FName new_fname(to_wstring(newRowName).c_str(), FNAME_Add);
+			dataTable->AddRow(new_fname, *reinterpret_cast<FTableRowBase*>(newRow));
+			uint8* actualRow = dataTable->FindRowUnchecked(new_fname);
+			if (!actualRow)
+			{
+				Output::send<LogLevel::Error>(STR("[TFWWorkbench] Failed to find newly added row\n"));
+				lua.set_bool(false);
+				return 1;
+			}
 
 			lua.for_each_in_table([&](LuaMadeSimple::LuaTableReference table) -> bool {
 				if (!table.key.is_string()) return false;
 
+				int stackBefore = lua_gettop(lua.get_lua_state());
+
 				auto propertyName = to_wstring(table.key.get_string());
-				Output::send<LogLevel::Verbose>(STR("[TFWWorkbench] Got property '{}'\n"), propertyName);
+				Output::send<LogLevel::Verbose>(STR("[TFWWorkbench] Processing field '{}', stack depth: {}\n"),
+					propertyName, stackBefore);
+				//Output::send<LogLevel::Verbose>(STR("[TFWWorkbench] Got property '{}'\n"), propertyName);
 				FProperty* property = rowStruct->GetPropertyByNameInChain(propertyName.c_str());
 				if (!property)
 				{
@@ -438,14 +523,20 @@ private:
 					return false;
 				}
 
-				void* propertyPtr = property->ContainerPtrToValuePtr<void>(newRow);
+				void* propertyPtr = property->ContainerPtrToValuePtr<void>(actualRow);
 				SetPropertyValueFromLua(lua, table, property, propertyPtr, propertyName);
+
+				int stackAfter = lua_gettop(lua.get_lua_state());
+				if (stackBefore != stackAfter)
+				{
+					Output::send<LogLevel::Error>(
+						STR("[TFWWorkbench] STACK IMBALANCE after '{}: before={}, after={}\n"),
+						propertyName, stackBefore, stackAfter
+					);
+				}
 
 				return false;
 			});
-
-			FName new_fname(to_wstring(newRowName).c_str(), FNAME_Add);
-			dataTable->AddRow(new_fname, *reinterpret_cast<FTableRowBase*>(newRow));
 
 			Output::send<LogLevel::Default>(STR("[TFWWorkbench] Successfully added row '{}'\n"), to_wstring(newRowName));
 
