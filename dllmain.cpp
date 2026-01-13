@@ -285,6 +285,84 @@ private:
 				}
 			}
 		}
+		else if (auto* prop = CastField<FMapProperty>(property))
+		{
+			if (table.value.is_table())
+			{
+				Output::send<LogLevel::Verbose>(
+					STR("[TFWWorkbench] Set FMapProperty '{}'\n"),
+					propertyName
+				);
+
+				// Count map elements first
+				int32 count = 0;
+				lua.for_each_in_table([&](LuaMadeSimple::LuaTableReference element) -> bool {
+					count++;
+					return false;
+				});
+				if (count == 0) return;
+				Output::send<LogLevel::Verbose>(
+					STR("[TFWWorkbench] Creating map with {} elements\n"),
+					count
+				);
+
+				FProperty* keyProp = prop->GetKeyProp();
+				FProperty* valueProp = prop->GetValueProp();
+				auto* map = static_cast<FScriptMap*>(propertyPtr);
+				FScriptMapLayout scriptLayout = map->GetScriptLayout(
+					keyProp->GetElementSize(), keyProp->GetMinAlignment(),
+					valueProp->GetElementSize(), valueProp->GetMinAlignment());
+
+				map->Empty(0, scriptLayout);
+
+				// Only supports FName for key and FStruct for value
+				lua.for_each_in_table([&](LuaMadeSimple::LuaTableReference element) -> bool {
+					int32 index = map->AddUninitialized(scriptLayout);
+					uint8* entryData = static_cast<uint8*>(map->GetData(index, scriptLayout));
+					void* keyPtr = entryData;
+					void* valuePtr = entryData + scriptLayout.ValueOffset;
+
+					if (auto* keyNameProp = CastField<FNameProperty>(keyProp))
+					{
+						if (element.key.is_string())
+						{
+							auto keyStr = to_wstring(element.key.get_string());
+							*static_cast<FName*>(keyPtr) = FName(keyStr.c_str(), FNAME_Add);
+
+							Output::send<LogLevel::Verbose>(
+								STR("[TFWWorkbench] Map key: {}\n"), keyStr
+							);
+						}
+					}
+
+					if (auto* valueStructProp = CastField<FStructProperty>(valueProp))
+					{
+						UScriptStruct* valueStruct = valueStructProp->GetStruct();
+						valueStruct->InitializeStruct(valuePtr);
+
+						if (element.value.is_table())
+						{
+							lua.for_each_in_table([&](LuaMadeSimple::LuaTableReference valueField) -> bool {
+								if (!valueField.key.is_string()) return false;
+
+								auto fieldName = to_wstring(valueField.key.get_string());
+								FProperty* fieldProp = valueStruct->GetPropertyByNameInChain(fieldName.c_str());
+
+								if (fieldProp)
+								{
+									void* fieldPtr = fieldProp->ContainerPtrToValuePtr<void>(valuePtr);
+									SetPropertyValueFromLua(lua, valueField, fieldProp, fieldPtr, fieldName);
+								}
+								
+								return false;
+							});
+						}
+					}
+
+					return false;
+				});
+			}
+		}
 		else if (auto* prop = CastField<FArrayProperty>(property))
 		{
 			if (table.value.is_table())
@@ -454,10 +532,6 @@ private:
 				return 1;
 			}
 
-			Output::send<LogLevel::Default>(STR("[TFWWorkbench] Adding row '{}'\n"),
-				to_wstring(newRowName)
-			);
-
 			int32 structSize = rowStruct->GetPropertiesSize();
 			uint8* newRow = static_cast<uint8*>(FMemory::Malloc(structSize, rowStruct->GetMinAlignment()));
 			if (!newRow)
@@ -482,6 +556,10 @@ private:
 			}
 			
 			rowStruct->CopyScriptStruct(newRow, sourceRow);
+
+			Output::send<LogLevel::Default>(STR("[TFWWorkbench] Adding row '{}'\n"),
+				to_wstring(newRowName)
+			);
 
 			FName new_fname(to_wstring(newRowName).c_str(), FNAME_Add);
 			dataTable->AddRow(new_fname, *reinterpret_cast<FTableRowBase*>(newRow));
