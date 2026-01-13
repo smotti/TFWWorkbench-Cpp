@@ -89,6 +89,10 @@ private:
 		{
 			try
 			{
+				Output::send<LogLevel::Verbose>(
+					STR("[TFWWorkbench] Caching DataTable: {}\n"),
+					to_wstring(tableName)
+				);
 				m_cached_data_table[tableName] = static_cast<UDataTable*>(
 					UObjectGlobals::StaticFindObject<UObject*>(
 						nullptr,
@@ -103,6 +107,7 @@ private:
 					STR("[TFWWorkbench] Failed to cache DataTable: {}\n"),
 					to_wstring(ex.what())
 				);
+				return nullptr;
 			}
 		}
 		return m_cached_data_table[tableName];
@@ -112,7 +117,23 @@ private:
 	{
 		if (!m_cached_row_struct.contains(tableName))
 		{
-			m_cached_row_struct[tableName] = this->GetDataTable(tableName)->GetRowStruct();
+			Output::send<LogLevel::Verbose>(
+				STR("[TFWWorkbench] Caching RowStruct for DataTable: {}\n"), 
+				to_wstring(tableName)
+			);
+			try
+			{
+				m_cached_row_struct[tableName] = this->GetDataTable(tableName)->GetRowStruct();
+			}
+			catch (const std::exception& ex)
+			{
+				Output::send<LogLevel::Error>(
+					STR("[TFWWorkbench] Failed to cache RowStruct for DataTable {}: {}\n"),
+					to_wstring(tableName),
+					to_wstring(ex.what())
+				);
+				return nullptr;
+			}
 		}
 		return m_cached_row_struct[tableName];
 	}
@@ -408,10 +429,6 @@ private:
 				return 1;
 			}
 
-			Output::send<LogLevel::Default>(STR("[TFWWorkbench] Adding row '{}'\n"),
-				to_wstring(newRowName)
-			);
-
 			UDataTable* dataTable = s_instance->GetDataTable(static_cast<std::string>(tableName));
 			if (!dataTable)
 			{
@@ -436,6 +453,10 @@ private:
 				lua.set_bool(false);
 				return 1;
 			}
+
+			Output::send<LogLevel::Default>(STR("[TFWWorkbench] Adding row '{}'\n"),
+				to_wstring(newRowName)
+			);
 
 			int32 structSize = rowStruct->GetPropertiesSize();
 			uint8* newRow = static_cast<uint8*>(FMemory::Malloc(structSize, rowStruct->GetMinAlignment()));
