@@ -252,7 +252,7 @@ private:
 			if (table.value.is_string())
 			{
 				auto propertyValue = to_wstring(table.value.get_string());
-				auto obj = UObjectGlobals::StaticFindObject(
+				UObject* obj = UObjectGlobals::StaticFindObject(
 					nullptr,
 					nullptr,
 					propertyValue
@@ -263,7 +263,7 @@ private:
 					Output::send<LogLevel::Verbose>(
 						STR("[TFWWorkbench] Found object via path: {}\n"), propertyValue
 					);
-					*static_cast<UObject*>(propertyPtr) = *obj;
+					*reinterpret_cast<UObject**>(propertyPtr) = obj;
 				}
 			}
 		}
