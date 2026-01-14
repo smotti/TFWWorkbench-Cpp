@@ -230,11 +230,17 @@ private:
 			if (table.value.is_string())
 			{
 				auto propertyValue = to_wstring(table.value.get_string());
-				FSoftObjectPath* softPath = static_cast<FSoftObjectPath*>(propertyPtr);
-				softPath->AssetPathName = FName(propertyValue.c_str(), FNAME_Add);
+				prop->ImportText_Direct(
+					propertyValue.c_str(),
+					propertyPtr,
+					nullptr,
+					PPF_None,
+					nullptr
+				);
 
 				Output::send<LogLevel::Verbose>(
-					STR("[TFWWorkbench] Set TSoftObjectPtr property '{}' to value: {}\n"),
+					STR("[TFWWorkbench] Set {} property '{}' to value: {}\n"),
+					prop->IsA<FSoftClassProperty>() ? STR("TSoftClassPr") : STR("TSoftObjectPtr"),
 					propertyName, propertyValue
 				);
 			}
