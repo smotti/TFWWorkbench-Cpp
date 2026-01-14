@@ -217,7 +217,7 @@ private:
 			if (table.value.is_bool())
 			{
 				bool propertyValue = table.value.get_bool();
-				*static_cast<bool*>(propertyPtr) = propertyValue;
+				prop->SetPropertyValueInContainer(propertyPtr, propertyValue);
 
 				Output::send<LogLevel::Verbose>(
 					STR("[TFWWorkbench] Set bool property '{}' to value: {}\n"),
