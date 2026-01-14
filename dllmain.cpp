@@ -262,8 +262,9 @@ private:
 		{
 			if (table.value.is_number())
 			{
-				double propertyValue = table.value.get_number();
-				*static_cast<uint8*>(propertyPtr) = static_cast<uint8>(propertyValue);
+				int64_t propertyValue = table.value.get_number();
+				FNumericProperty* underlyingProp = prop->GetUnderlyingProperty();
+				underlyingProp->SetIntPropertyValue(propertyPtr, propertyValue);
 
 				Output::send<LogLevel::Verbose>(
 					STR("[TFWWorkbench] Set FEnumProperty property '{}' to value: {}\n"),
@@ -552,6 +553,7 @@ private:
 			// if a "sourceRow" isn't used. It's successful in adding the new row w/o
 			// a source row. But fails when reading the new row from the table.
 			rowStruct->InitializeStruct(newRow);
+			
 			auto sourceRowName = s_instance->dataTableSourceRows.at(static_cast<std::string>(tableName));
 			FName sourceFName(sourceRowName, FNAME_Find);
 			uint8* sourceRow = dataTable->FindRowUnchecked(sourceFName);
@@ -563,7 +565,7 @@ private:
 			}
 			
 			rowStruct->CopyScriptStruct(newRow, sourceRow);
-
+			
 			Output::send<LogLevel::Default>(STR("[TFWWorkbench] Adding row '{}'\n"),
 				to_wstring(newRowName)
 			);
