@@ -149,7 +149,8 @@ private:
 			if (table.value.is_string())
 			{
 				auto propertyValue = to_wstring(table.value.get_string());
-				*static_cast<FText*>(propertyPtr) = FText(propertyValue.c_str());
+				FString quotedValue = FString::Printf(STR("NSLOCTEXT(\"\", \"\", \"%s\")"), propertyValue.c_str());
+				prop->ImportText_Direct(quotedValue.GetCharArray().GetData(), propertyPtr, nullptr, PPF_None, nullptr);
 
 				Output::send<LogLevel::Verbose>(
 					STR("[TFWWorkbench] Set FText property '{}' to value: {}\n"),
