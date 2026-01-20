@@ -35,7 +35,6 @@ private:
 	std::map<std::string, UScriptStruct*> m_cached_row_struct = {};
 
 	std::map<std::string, StringType> dataTables = {};
-	std::map<std::string, StringType> dataTableSourceRows = {};
 
 public:
 	TFWWorkbench() : CppUserModBase()
@@ -549,26 +548,7 @@ private:
 				return 1;
 			}
 
-			// NOTE: Still haven't figured out why dumping (reading) of tables fail
-			// if a "sourceRow" isn't used. It's successful in adding the new row w/o
-			// a source row. But fails when reading the new row from the table.
 			rowStruct->InitializeStruct(newRow);
-			
-			auto sourceRowName = s_instance->dataTableSourceRows.at(static_cast<std::string>(tableName));
-			FName sourceFName(sourceRowName, FNAME_Find);
-			uint8* sourceRow = dataTable->FindRowUnchecked(sourceFName);
-			if (!sourceRow)
-			{
-				Output::send<LogLevel::Error>(STR("[TFWWorkbench] Source row {} not found\n"), sourceRowName);
-				lua.set_bool(false);
-				return 1;
-			}
-			
-			rowStruct->CopyScriptStruct(newRow, sourceRow);
-			
-			Output::send<LogLevel::Default>(STR("[TFWWorkbench] Adding row '{}'\n"),
-				to_wstring(newRowName)
-			);
 
 			FName new_fname(to_wstring(newRowName).c_str(), FNAME_Add);
 			dataTable->AddRow(new_fname, *reinterpret_cast<FTableRowBase*>(newRow));
@@ -644,10 +624,10 @@ private:
 		}
 
 		const int argCount = lua_gettop(lua.get_lua_state());
-		if (argCount < 3)
+		if (argCount < 2)
 		{
 			Output::send<LogLevel::Error>(
-				STR("[TFWWorkbench] Expected 3 arguments, got {}\n"),
+				STR("[TFWWorkbench] Expected 2 arguments, got {}\n"),
 				argCount
 			);
 			lua.set_bool(false);
@@ -655,10 +635,10 @@ private:
 		}
 
 		lua_State* L = lua.get_lua_state();
-		if (!lua_isstring(L, 1) || !lua_isstring(L, 2) || !lua_isstring(L, 3))
+		if (!lua_isstring(L, 1) || !lua_isstring(L, 2))
 		{
 			Output::send<LogLevel::Error>(
-				STR("[TFWWorkbench] Invalid parameter types. Expected: (string, string, string)\n")
+				STR("[TFWWorkbench] Invalid parameter types. Expected: (string, string)\n")
 			);
 			lua.set_bool(false);
 			return 1;
@@ -666,9 +646,8 @@ private:
 
 		std::string tableName = lua_tostring(L, 1);
 		StringType tablePath = to_wstring(lua_tostring(L, 2));
-		StringType sourceRowName = to_wstring(lua_tostring(L, 3));
 
-		if (tableName == "" || tablePath.empty() || sourceRowName.empty())
+		if (tableName == "" || tablePath.empty())
 		{
 			Output::send<LogLevel::Error>(
 				STR("[TFWWorkbench] Parameters cannot be null or empty\n")
@@ -678,8 +657,8 @@ private:
 		}
 
 		Output::send<LogLevel::Verbose>(
-			STR("[TFWWorkbench] Configuring DataTable: {} | {} | {}\n"),
-			to_wstring(tableName), tablePath, sourceRowName
+			STR("[TFWWorkbench] Configuring DataTable: {} | {}\n"),
+			to_wstring(tableName), tablePath
 		);
 
 		try
@@ -691,23 +670,6 @@ private:
 			Output::send<LogLevel::Error>(
 				STR("[TFWWorkbench] Failed to configure data table: {} - {}\n"),
 				to_wstring(tableName), tablePath
-			);
-			Output::send<LogLevel::Error>(
-				STR("[TFWWorkbench] {}\n"), to_wstring(ex.what())
-			);
-			lua.set_bool(false);
-			return 1;
-		}
-
-		try
-		{
-			s_instance->dataTableSourceRows.insert({ tableName, sourceRowName });
-		}
-		catch (const std::exception& ex)
-		{
-			Output::send<LogLevel::Error>(
-				STR("[TFWWorkbench] Failed to configure source row for data table: {} - {}\n"),
-				to_wstring(tableName), sourceRowName
 			);
 			Output::send<LogLevel::Error>(
 				STR("[TFWWorkbench] {}\n"), to_wstring(ex.what())
